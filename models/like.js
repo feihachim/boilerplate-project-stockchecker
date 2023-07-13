@@ -6,9 +6,8 @@ const likeSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
-  ipEncrypted: {
+  ipsEncrypted: {
     type: [String],
-    required: true,
   },
 });
 

@@ -8,7 +8,6 @@ const saltRounds = 10;
 
 module.exports = function (app) {
   app.route("/api/stock-prices").get(function (req, res) {
-    // TODO
     const stock = req.query.stock;
     const like = req.query.like;
     if (!stock) {
@@ -26,16 +25,40 @@ module.exports = function (app) {
             return;
           }
           const data = foundStock.data;
-          console.log("simple stock");
-          console.log(data);
-          const newStock = {
-            stock: data.symbol,
-            price: data.latestPrice,
-            likes: 0,
-          };
-          res.send({
-            stockData: newStock,
-          });
+          if (like) {
+            const ipHashed = bcrypt.hashSync(req.ip, saltRounds);
+            Like.find({ stock: data.symbol })
+              .then((stockFound) => {
+                if (!stockFound) {
+                  const newLike = new Like({ stock: data.symbol });
+                  newLike.ipsEncrypted.push(ipHashed);
+                  newLike.save();
+                }
+                if (stockFound) {
+                  const dejaVu = stockFound.ipsEncrypted.filter((element) =>
+                    bcrypt.compareSync(req.ip, ipHashed)
+                  );
+                  if (dejaVu.length === 0) {
+                    stockFound.ipsEncrypted.push(ipHashed);
+                  }
+                }
+              })
+              .catch((error) => {
+                res.send({ error: error });
+              });
+          }
+          Like.countDocuments({ stock: data.symbol })
+            .then((likeCount) => {
+              const newStock = {
+                stock: data.symbol,
+                price: data.latestPrice,
+                likes: likeCount,
+              };
+              res.send({ stockData: newStock });
+            })
+            .catch((error) => {
+              res.send({ error: error });
+            });
         })
         .catch((error) => {
           res.send({ error: error });
@@ -50,7 +73,7 @@ module.exports = function (app) {
       axios
         .all(urls.map((url) => axios.get(url)))
         .then((stocks) => {
-          console.log("double request");
+          // console.log("double request");
           const data = stocks.map((stock) => stock.data);
           console.log(data);
         })
