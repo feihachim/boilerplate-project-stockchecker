@@ -4,9 +4,10 @@ const likeSchema = new mongoose.Schema({
   stock: {
     type: String,
     required: true,
+    unique: true,
   },
   ipEncrypted: {
-    type: String,
+    type: [String],
     required: true,
   },
 });

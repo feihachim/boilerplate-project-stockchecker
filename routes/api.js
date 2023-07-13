@@ -20,21 +20,40 @@ module.exports = function (app) {
         .get(
           `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${stock}/quote`
         )
-        .then((foundStock) => {})
+        .then((foundStock) => {
+          if (!foundStock) {
+            res.send("no stock under this symbol");
+            return;
+          }
+          const data = foundStock.data;
+          console.log("simple stock");
+          console.log(data);
+          const newStock = {
+            stock: data.symbol,
+            price: data.latestPrice,
+            likes: 0,
+          };
+          res.send({
+            stockData: newStock,
+          });
+        })
         .catch((error) => {
           res.send({ error: error });
         });
       return;
     }
     if (Array.isArray(stock)) {
-      axios.all
-        .get(
-          `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${stock[0]}/quote`
-        )
-        .get(
-          `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${stock[1]}/quote`
-        )
-        .then((stock1, stock2) => {})
+      const urls = [
+        `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${stock[0]}/quote`,
+        `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${stock[1]}/quote`,
+      ];
+      axios
+        .all(urls.map((url) => axios.get(url)))
+        .then((stocks) => {
+          console.log("double request");
+          const data = stocks.map((stock) => stock.data);
+          console.log(data);
+        })
         .catch((error) => {
           res.send({ error: error });
         });
