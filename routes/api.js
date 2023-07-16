@@ -1,10 +1,33 @@
 "use strict";
 
 const axios = require("axios");
-const bcrypt = require("bcrypt");
+// const bcrypt = require("bcrypt");
 
 const Like = require("../models/like");
-const saltRounds = 10;
+// const saltRounds = 10;
+
+function getStockLiked(likeFound, data, req, like = false) {
+  let stockLiked;
+  if (!likeFound) {
+    const newLike = new Like({ stock: data.symbol });
+    if (like) {
+      if (!newLike.ipList.includes(req.ip)) {
+        newLike.ipList.push(req.ip);
+      }
+    }
+    stockLiked = newLike;
+    newLike.save();
+  } else {
+    if (like) {
+      if (!likeFound.ipList.includes(req.ip)) {
+        likeFound.ipList.push(req.ip);
+        likeFound.save();
+      }
+    }
+    stockLiked = likeFound;
+  }
+  return stockLiked;
+}
 
 module.exports = function (app) {
   app.route("/api/stock-prices").get(function (req, res) {
@@ -26,34 +49,17 @@ module.exports = function (app) {
               return;
             }
             const data = foundStock.data;
-            if (like) {
-              const ipHashed = bcrypt.hashSync(req.ip, saltRounds);
-              Like.find({ stock: data.symbol }).then((stockFound) => {
-                if (!stockFound) {
-                  const newLike = new Like({ stock: data.symbol });
-                  newLike.ipsEncrypted.push(ipHashed);
-                  newLike.save();
-                }
-                if (stockFound) {
-                  console.log("stock liked", stockFound);
-                  const dejaVu = stockFound.ipsEncrypted.filter((element) =>
-                    bcrypt.compareSync(req.ip, element)
-                  );
-                  if (dejaVu.length === 0) {
-                    stockFound.ipsEncrypted.push(ipHashed);
-                    stockFound.save();
-                  }
-                }
-              });
-            }
-            Like.countDocuments({ stock: data.symbol }).then((likeCount) => {
-              const newStock = {
-                stock: data.symbol,
-                price: data.latestPrice,
-                likes: likeCount,
+            // console.log(data);
+            Like.findOne({ stock: data.symbol }).then((likeFound) => {
+              let stockLiked = getStockLiked(likeFound, data, like);
+              const stockData = {
+                stockData: {
+                  stock: data.symbol,
+                  price: data.latestPrice,
+                  likes: stockLiked.ipList.length,
+                },
               };
-              res.send({ stockData: newStock });
-              return;
+              res.send(stockData);
             });
           });
       }
@@ -64,58 +70,33 @@ module.exports = function (app) {
         ];
         axios.all(urls.map((url) => axios.get(url))).then((stocks) => {
           const data = stocks.map((stock) => stock.data);
-
-          if (like) {
-            Promise.all([
-              Like.findOne({ stock: data[0].symbol }),
-              Like.findOne({ stock: data[1].symbol }),
-            ]).then(([stock1Likes, stock2Likes]) => {
-              const ipHashed = bcrypt.hashSync(req.ip, saltRounds);
-              if (!stock1Likes) {
-                const newLike1 = new Like({ stock: data[0].symbol });
-                newLike1.ipsEncrypted.push(ipHashed);
-                newLike1.save();
-              }
-              if (!stock2Likes) {
-                const newLike2 = new Like({ stock: data[1].symbol });
-                newLike2.ipsEncrypted.push(ipHashed);
-                newLike2.save();
-              }
-              if (stock1Likes) {
-                const dejaVu1 = stock1Likes.ipsEncrypted.filter((element) =>
-                  bcrypt.compareSync(req.ip, ipHashed)
-                );
-                if (dejaVu1.length === 0) {
-                  stock1Likes.ipsEncrypted.push(ipHashed);
-                  stock1Likes.save();
-                }
-              }
-              if (stock2Likes) {
-                const dejaVu2 = stock2Likes.ipsEncrypted.filter((element) =>
-                  bcrypt.compareSync(req.ip, ipHashed)
-                );
-                if (dejaVu2.length === 0) {
-                  stock2Likes.ipsEncrypted.push(ipHashed);
-                  stock2Likes.save();
-                }
-              }
-            });
+          if (!data || data.length < 2) {
+            res.send("no data");
+            return;
           }
           Promise.all([
-            Like.countDocuments({ stock: data[0].symbol }),
-            Like.countDocuments({ stock: data[1].symbol }),
-          ]).then(([stock1Count, stock2Count]) => {
-            const newStock1 = {
-              stock: data[0].symbol,
-              price: data[0].latestPrice,
-              rel_likes: stock1Count - stock2Count,
+            Like.findOne({ stock: data[0].symbol }),
+            Like.findOne({ stock: data[1].symbol }),
+          ]).then(([stock1Likes, stock2Likes]) => {
+            // console.log([stock1Likes, stock2Likes]);
+            let result1 = getStockLiked(stock1Likes, data[0], req, like);
+            let result2 = getStockLiked(stock2Likes, data[1], req, like);
+            const rel_likes = result1.ipList.length - result2.ipList.length;
+            const stockData = {
+              stockData: [
+                {
+                  stock: data[0].symbol,
+                  price: data[0].latestPrice,
+                  rel_likes: rel_likes,
+                },
+                {
+                  stock: data[1].symbol,
+                  price: data[1].latestPrice,
+                  rel_likes: -rel_likes,
+                },
+              ],
             };
-            const newStock2 = {
-              stock: data[1].symbol,
-              price: data[1].latestPrice,
-              rel_likes: stock2Count - stock1Count,
-            };
-            res.send({ stockData: [newStock1, newStock2] });
+            res.send(stockData);
           });
         });
       }
